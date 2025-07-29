@@ -1,0 +1,11 @@
+github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/sashabaranov/go-openai v1.40.5 h1:SwIlNdWflzR1Rxd1gv3pUg6pwPc6cQ2uMoHs8ai+/NY=
+github.com/sashabaranov/go-openai v1.40.5/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/asr v1.0.1200 h1:A20Y0cfe1UYMBQPFiAtACnqTnBUmoTvm7r4ATW+/4bQ=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/asr v1.0.1200/go.mod h1:vOusU1UDJZA2RQJwFrL53w/AtBlYaJ7gAnqDNDluK+s=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1200/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1211 h1:Y97J0JA6dYIhsMeswB1G6RCiTH8qUIBEBrng9onSl60=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1211/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tts v1.0.1211 h1:U4WQctTEqerEQ5IhNjN1wYY7MdNcC7f5h+0gxckx+qk=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tts v1.0.1211/go.mod h1:ra7ahU2dMzauCAhI87NXyfOThpqHOJXLRlNIAPvIlzM=
