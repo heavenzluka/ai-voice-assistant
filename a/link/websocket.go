@@ -59,6 +59,7 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 		var lastAudioTime time.Time
 		// 记录最后一次发送给 LLM 的时间, 避免手动发送后又静音发送导致多次发送
 		var lastTTSTime time.Time
+		// 地理信息
 		var mu sync.Mutex
 		const silenceTimeout = 5 * time.Second // 静音超时时间
 
@@ -116,7 +117,7 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 		}()
 
 		// 初始化llmCtx, 传参在最下面的协程里
-		var llmCtx *LLM.LLMContext
+		llmCtx := LLM.NewLLMContext("你是一个一个猫娘", "请在每句话结尾加上'喵~'")
 		// 处理 LLM 回复
 		wg.Add(1)
 		answerTextChan := make(chan string, 10)
@@ -143,6 +144,8 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 			}
 		}()
 
+		TTSCfg := tts.InitTTSConfig()
+
 		//处理 TTS 请求
 		returnAudioChan := make(chan []byte, 100)
 		wg.Add(1)
@@ -152,7 +155,7 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 				//log.Printf("开始TTS转换: %s", answer)
 
 				// 调用TTS函数生成音频数据
-				audioData, err := tts.GetTTSRBytes(answer, "")
+				audioData, err := TTSCfg.GetTTSRBytes(answer, "")
 				if err != nil {
 					log.Printf("TTS转换失败: %v", err)
 					continue
@@ -161,7 +164,7 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 			}
 		}()
 
-		// 处理WebSocket消息
+		// 处理WebSocket消息, 重要核心
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -215,11 +218,7 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 						}
 					} else {
 						// 文本消息：尝试解析 JSON 控制指令
-						var cmd struct {
-							Type   string `json:"type"`
-							System string `json:"system"`
-							User   string `json:"user"`
-						}
+						var cmd cmd
 						if err := json.Unmarshal(msg, &cmd); err != nil {
 							log.Printf("无法解析JSON消息: %v, 原文: %s", err, string(msg))
 							continue
@@ -240,7 +239,6 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 							lastAudioTime = time.Now()
 							mu.Unlock()
 							log.Printf("已更新LLM上下文: system=%s, user=%s", cmd.System, cmd.User)
-
 						case "hangup":
 							log.Println("收到 hangup 消息，结束会话")
 							cancel()
@@ -257,7 +255,32 @@ func HandleWebSocket(asrClient *asr.ASRClient) http.HandlerFunc {
 								log.Println("无识别内容，跳过 LLM 调用")
 							}
 							mu.Unlock()
-
+						case "up":
+							TTSCfg.AdjustVolume(true)
+						case "down":
+							TTSCfg.AdjustVolume(false)
+						case "fast":
+							TTSCfg.AdjustSpeed(true)
+						case "late":
+							TTSCfg.AdjustSpeed(false)
+						//case "updatalocation":
+						//	log.Println("收到 updateLocation 消息")
+						//	if cmd.Location != nil {
+						//		mu.Lock()
+						//		// 设置地理位置
+						//		location := Location{
+						//			Latitude:  cmd.Location.Latitude,
+						//			Longitude: cmd.Location.Longitude,
+						//			Accuracy:  cmd.Location.Accuracy,
+						//		}
+						//		log.Printf("地址为: %v", location)
+						//		// 拼接为字符串
+						//
+						//		mu.Unlock()
+						//	} else {
+						//
+						//		log.Printf("updateLocation 消息中缺少 Location 数据")
+						//	}
 						default:
 							log.Printf("未知控制消息类型: %s", cmd.Type)
 						}

@@ -3,14 +3,14 @@
      <!-- 录音控制 -->
     <button id="startBtn" :disabled="startBtnDisabled" @click="startRecording">开始通话</button>
 
-  <button
-  id="togglePauseBtn"
-  :disabled="togglePauseBtnDisabled"
-  @click="togglePause"
-  :class="{ paused: isPaused }"
->
-  {{ isPaused ? '▶️ 继续说话' : '⏸️ 暂停说话' }}
-</button>
+    <button
+    id="togglePauseBtn"
+    :disabled="togglePauseBtnDisabled"
+    @click="togglePause"
+    :class="{ paused: isPaused }"
+  >
+    {{ isPaused ? '▶️ 继续说话' : '⏸️ 暂停说话' }}
+  </button>
 
     <button id="stopBtn" :disabled="stopBtnDisabled" @click="stopRecording">挂断电话</button>
     <!-- <button id="exportBtn" @click="exportPCM">导出 PCM</button> -->
@@ -18,6 +18,30 @@
     <button @click="sendGoCommand">发送</button>
 
     <button @click="clearData">清除数据</button>
+
+<!-- 地理信息相关 -->
+    <div class="location-control">
+      <button
+        id="getLocationBtn"
+        @click="getLocation"
+        :disabled="isGettingLocation" 
+      ><!-- 防止重复点击 -->
+        {{ hasLocationPermission ? '🔄 刷新位置' : (locationInfo ? '📍 位置已获取' : '📍 获取我的位置') }}
+      </button>
+      <!-- 显示位置状态或错误信息 -->
+      <div v-if="locationInfo" class="location-info success">
+        位置: {{ locationInfo.latitude.toFixed(6) }}, {{ locationInfo.longitude.toFixed(6) }} (精度: {{ locationInfo.accuracy.toFixed(1) }}m)
+      </div>
+      <div v-else-if="locationError" class="location-info error">
+        位置错误: {{ locationError }}
+      </div>
+      <div v-else-if="isGettingLocation" class="location-info">
+        正在获取位置...
+      </div>
+      <!-- <div v-else class="location-info hint">
+        点击上方按钮获取位置信息，可用于提供本地化服务。
+      </div> -->
+    </div>
 
 <!-- 角色设定区 -->
     <div class="role-config">
@@ -30,6 +54,13 @@
         <label for="role-user-design">bot初始设定:(语气口癖等)</label>
         <input type="text" id="role-user-design" v-model="roleUserDesign" placeholder='例: 请在结尾加"喵~"' />
       </div>
+<div class="voice-control">
+  <button id="voice-up" @click="sendCommand('up')">+</button>
+  <button id="voice-down" @click="sendCommand('down')">-</button>
+  <button id="voice-fast" @click="sendCommand('fast')">++</button>
+  <button id="voice-late" @click="sendCommand('late')">--</button>
+</div>
+
       <p><small>💡 修改后需重新开始录音才会生效</small></p>
     </div>
 
@@ -51,10 +82,11 @@ const status = ref('等待开始');
 const pcmDataDisplay = ref('');
 const result = ref('等待语音识别结果: \n');
 const answer = ref('等待大模型回复: \n');
-
-const url = 'your-server-ip';
+// 内网穿透
+const url = '8cb8d4b3957f.ngrok-free.app';
 const wsUrl = 'wss://' + url + '/asr-stream';
 
+// 音频相关
 let socket = null;
 let isRecording = ref(false);
 let audioContext = null;
@@ -62,6 +94,13 @@ let mediaStream = null;
 let mediaStreamSource = null;
 let processor = null;
 let pcmChunks = [];
+
+// 地理位置相关响应式变量
+const locationInfo = ref(null); // 存储获取到的位置信息 { latitude, longitude, accuracy }
+const locationName = ref(''); // 对经纬度进行反编码获得具体地理位置名
+const locationError = ref(null); // 存储获取位置时的错误信息
+const hasLocationPermission = ref(false); // 记录用户是否授予了位置权限
+const isGettingLocation = ref(false)// 防止重复点击
 
 // 角色设定
 let roleSystem = ref('你是一只名为米雪儿的猫娘');
@@ -73,17 +112,23 @@ let currentAsrText = '';
 // 暂停状态
 let isPaused = false;
 
+
 // 获取角色设定
 function getRoleDesign() {
-  return {
+  var baseData = {
     Type: "init",
     System: roleSystem.value.trim(),
     User: roleUserDesign.value.trim()
   };
 }
 
+
 // 清除数据（刷新页面）
 function clearData() {
+   locationInfo.value = null; 
+  locationError.value = null; 
+  hasLocationPermission.value = false;
+  isGettingLocation.value = false;
   location.reload();
 }
 
@@ -141,6 +186,17 @@ function connectWebSocket() {
     console.error('WebSocket error:', error);
     status.value = "连接错误: " + error.message;
   };
+}
+
+// 发送tts控制命令
+function sendCommand(command) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    const message = { type: command };
+    socket.send(JSON.stringify(message));
+    console.log(`已发送命令: ${command}`);
+  } else {
+    console.error('WebSocket未连接');
+  }
 }
 
 // 开始录音
@@ -336,11 +392,108 @@ function convertFloat32ToInt16(float32Array) {
   return int16Array;
 }
 
+async function getLocation() {
+  //检查浏览器是否支持 Geolocation API
+  if (!("geolocation" in navigator)) {
+    status.value = "您的浏览器不支持地理位置功能。";
+    locationError.value = "Geolocation not supported.";
+    return;
+  }
+
+  status.value = "正在请求获取您的位置...";
+
+  try {
+    // 请求用户位置 
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, // 尝试获取高精度位置
+        timeout: 10000,           // 10秒超时
+        maximumAge: 60000         // 缓存位置最长1分钟
+      });
+    });
+
+    //  成功获取位置 
+    locationInfo.value = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy // 位置精度（米）
+    };
+    hasLocationPermission.value = true;
+    status.value = `位置获取成功 (精度: ${position.coords.accuracy.toFixed(1)}m)`;
+    console.log('获取到的地理位置:', locationInfo.value);
+    // 等待发送给后端
+    await sendLocationToBackend()
+
+  } catch (error) {
+    // 处理各种错误
+    let errorMsg = "获取位置失败";
+    switch(error.code) {
+      case error.PERMISSION_DENIED:
+        errorMsg = "用户拒绝了位置请求。";
+        hasLocationPermission.value = false;
+        break;
+      case error.POSITION_UNAVAILABLE:
+        errorMsg = "位置信息不可用。";
+        break;
+      case error.TIMEOUT:
+        errorMsg = "获取位置超时。";
+        break;
+      default:
+        errorMsg = "未知错误: " + error.message;
+        break;
+    }
+    console.error('获取地理位置失败:', errorMsg);
+    locationError.value = errorMsg;
+    status.value = errorMsg;
+  }
+
+
+
+// 专门用于发送地理位置信息到后端的函数
+async function sendLocationToBackend() {
+  // 检查是否有有效的地理位置信息
+  if (!locationInfo.value || locationInfo.value.latitude === undefined || locationInfo.value.longitude === undefined) {
+    console.warn('无法发送位置信息：没有有效的 locationInfo');
+    status.value = "没有可发送的位置信息。";
+    return;
+  }
+
+  // 检查 WebSocket 连接是否就绪
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.warn('无法发送位置信息：WebSocket 连接未打开或不存在');
+    status.value = "连接未建立，无法发送位置信息。";
+    return;
+  }
+
+  const locationMessage = {
+    Type: "updateLocation",
+    Location: {
+      latitude: locationInfo.value.latitude,
+      longitude: locationInfo.value.longitude,
+      accuracy: locationInfo.value.accuracy || 0 // 提供默认值
+    }
+  };
+
+  try {
+    // 发送消息
+    await ws.send(JSON.stringify(locationMessage));
+    console.log('位置信息已发送给后端:', locationMessage);
+  } catch (error) {
+    console.error('发送位置信息到后端失败:', error);
+    status.value = "发送位置信息失败。";
+  }
+}
+}
+
 // 组件卸载前停止录音
 onBeforeUnmount(() => {
   stopRecording();
 });
 </script>
+
+
+
+
 <style scoped>
 .container {
   max-width: 900px;
@@ -485,5 +638,138 @@ button:last-child {
   .role-config input {
     font-size: 14px;
   }
+}
+
+/* 基本按钮样式 */
+.voice-control {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px; /* 按钮之间的间距 */
+  margin: 20px 0; /* 上下边距 */
+}
+
+.voice-control button {
+  padding: 10px 20px; /* 内边距 */
+  font-size: 16px; /* 字体大小 */
+  border: none; /* 无边框 */
+  border-radius: 5px; /* 圆角 */
+  cursor: pointer; /* 鼠标悬停时显示手型光标 */
+  transition: background-color 0.3s, transform 0.2s; /* 平滑过渡效果 */
+}
+
+/* 按钮颜色和悬停效果 */
+#voice-up {
+  background-color: #4CAF50; /* 绿色 */
+  color: white;
+}
+
+#voice-up:hover {
+  background-color: #45a049;
+  transform: scale(1.05); /* 悬停时稍微放大 */
+}
+
+#voice-down {
+  background-color: #f44336; /* 红色 */
+  color: white;
+}
+
+#voice-down:hover {
+  background-color: #da190b;
+  transform: scale(1.05);
+}
+
+#voice-fast {
+  background-color: #2196F3; /* 蓝色 */
+  color: white;
+}
+
+#voice-fast:hover {
+  background-color: #0b7dda;
+  transform: scale(1.05);
+}
+
+#voice-late {
+  background-color: #ff9800; /* 橙色 */
+  color: white;
+}
+
+#voice-late:hover {
+  background-color: #e68a00;
+  transform: scale(1.05);
+}
+
+/* 按钮按下效果 */
+.voice-control button:active {
+  transform: scale(0.95); /* 按下时稍微缩小 */
+}
+
+
+.location-control {
+  margin: 1rem 0;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.location-info {
+  margin-top: 0.5rem;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.location-info.success {
+  color: #2e8b57;
+}
+
+.location-info.error {
+  color: #d32f2f;
+}
+
+#getLocationBtn {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 1px solid #007bff;
+  background-color: #007bff;
+  color: white;
+  border-radius: 4px;
+}
+
+#getLocationBtn:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+#getLocationBtn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  border-color: #ccc;
+}
+
+/* 保持原有的 .voice-control 样式 */
+.voice-control {
+  margin-top: 0.5rem;
+}
+
+.voice-control button {
+  margin: 0 0.2rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 1px solid #007bff;
+  background-color: #007bff;
+  color: white;
+  border-radius: 4px;
+}
+
+.voice-control button:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+.voice-control button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  border-color: #ccc;
 }
 </style>

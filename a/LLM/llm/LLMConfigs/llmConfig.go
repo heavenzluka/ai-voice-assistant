@@ -2,12 +2,13 @@ package LLMConfigs
 
 import (
 	ark "github.com/sashabaranov/go-openai"
+	"main/client"
 )
 
 const (
-	DoubaoAPIKey string = "your-llm-key"
-	Model        string = "your-llm-model"
-	BaseURL      string = "https://ark.cn-beijing.volces.com/api/v3"//一个例子
+	DoubaoAPIKey string = client.DoubaoAPIKey
+	Model        string = client.Model
+	BaseURL      string = client.BaseURL
 )
 
 func Config() *ark.Client {
